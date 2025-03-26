@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Load environment variables from .env file
+import 'dotenv/config';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -16,8 +19,9 @@ import { EmbeddingService } from './embeddings.js';
 
 // Environment variables for configuration
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-// Force using IP address to avoid hostname resolution issues
-const QDRANT_URL = 'http://127.0.0.1:6333';
+// Use Qdrant URL from environment if available, otherwise fallback to local
+const QDRANT_URL = process.env.QDRANT_URL || 'http://127.0.0.1:6333';
+const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
 const COLLECTION_NAME = 'documentation';
 const EMBEDDING_PROVIDER = process.env.EMBEDDING_PROVIDER || 'ollama';
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL;
@@ -87,12 +91,22 @@ class RagDocsServer {
 
   private async init() {
     // Test connection with direct axios call
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+    
+    // Add API key to headers if available
+    if (QDRANT_API_KEY) {
+      headers['api-key'] = QDRANT_API_KEY;
+    }
+    
+    console.error('Connecting to Qdrant at URL:', QDRANT_URL);
+    console.error('Using API Key:', QDRANT_API_KEY ? 'Yes' : 'No');
+    
     const axiosInstance = axios.create({
-      baseURL: 'http://127.0.0.1:6333',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      }
+      baseURL: QDRANT_URL,
+      headers
     });
 
     // Test connection
@@ -107,10 +121,17 @@ class RagDocsServer {
       );
     }
 
-    // Initialize Qdrant client with minimal configuration
-    this.qdrantClient = new QdrantClient({
-      url: 'http://127.0.0.1:6333'
-    });
+    // Initialize Qdrant client with configuration from environment
+    const qdrantConfig: any = {
+      url: QDRANT_URL
+    };
+    
+    // Add API key if provided
+    if (QDRANT_API_KEY) {
+      qdrantConfig.apiKey = QDRANT_API_KEY;
+    }
+    
+    this.qdrantClient = new QdrantClient(qdrantConfig);
 
     // Initialize embedding service from environment configuration
     this.embeddingService = EmbeddingService.createFromConfig({
